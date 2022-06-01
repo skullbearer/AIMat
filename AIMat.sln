@@ -5,6 +5,11 @@ VisualStudioVersion = 16.0.32407.337
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AIMat", "AIMat\AIMat.csproj", "{3AEACF29-A4F7-42D6-9E56-1CA4D4C02CE8}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{D4808E32-8F38-4ED4-9353-7CB4EFC63B2B}"
+	ProjectSection(SolutionItems) = preProject
+		..\skullbearer\GyroPTol\GyroPTol\GyroPTol.cs = ..\skullbearer\GyroPTol\GyroPTol\GyroPTol.cs
+	EndProjectSection
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64

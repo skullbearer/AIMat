@@ -38,8 +38,18 @@ namespace IngameScript
         int tickStep = 10;
         double timeStep;
         int tickCount;
+        List<double> setList = new List<double>();
+        int numInc = 10;
+        bool posNeg = false;
+        Dictionary<string, Vector3D> resultBook = new Dictionary<string, Vector3D>();
+        int iNum;
+        bool firstStep;
+        bool reverseIt;
+        bool brakingTest = false;
+        double lastSpeed = 0;
 
         Func<bool> currAction;
+        bool doProfile = false;
 
         public Program()
         {
@@ -54,15 +64,78 @@ namespace IngameScript
             _cmnds["Ret"] = Retrograde;
             _cmnds["Pro"] = Prograde;
             _cmnds["Flip"] = Flip;
-
-            sM = RunStuffOverTime();
+            _cmnds["test"] = ProfileGyros;
 
             timeStep = (double)tickStep / 60.0;
             tickCount = tickStep; // Run the first time.
 
+            doProfile = false;
+            resultBook.Clear();
+            setList.Clear();
+
             Runtime.UpdateFrequency |= UpdateFrequency.None;
         }
 
+        public void Start()
+        {
+            sM?.Dispose();
+            sM = null;
+            sM = RunStuffOverTime();
+            Runtime.UpdateFrequency |= UpdateFrequency.Once;
+        }
+        public void ProfileGyros()
+        {
+            Echo("In ProfileGyros()");
+            tickStep = 1;
+            timeStep = (double)tickStep / 60.0;
+            for(int i = 0; i < numInc; i++)
+            {
+                setList.Add(Math.PI - (double)i * (Math.PI / numInc));
+                Echo($"{setList[setList.Count - 1]}");
+            }
+            if (posNeg)
+            {
+                for(int i = numInc-1; i >= 0; i--)
+                {
+                    setList.Add(-Math.PI + (double)i * (Math.PI / numInc));
+                }
+            }
+            firstStep = true;
+            reverseIt = false;
+            doProfile = true;
+            currAction = () => profileDriver();
+            Start();
+        }
+
+        public bool profileDriver()
+        {
+            Echo("In profileDriver()");
+            double mySpd = Vector3D.TransformNormal(mySeat.GetShipVelocities().AngularVelocity, MatrixD.Transpose(mySeat.WorldMatrix)).X;
+            Echo($"{Math.Round(mySpd,2)},{Math.Round(setList[iNum],2)}");
+            int dir;
+            if (setList[iNum] == 0)
+                dir = 1;
+            else
+                dir = Math.Sign(setList[iNum]);
+            if (firstStep && mySpd > -Math.PI*dir)
+            {
+                Echo("Reversing to eliminate zero point error...");
+                GyroCommand(new Vector3D(Math.PI * dir, 0, 0), mySeat.WorldMatrix, false, true);
+                lastSpeed = mySpd;  
+                return false;
+            }
+            else if (iNum < setList.Count - 1 && mySpd < setList[iNum] - 0.001)
+            {
+                GyroCommand(new Vector3D(-setList[iNum], 0, 0), mySeat.WorldMatrix, false, true);
+                if (firstStep)
+                    firstStep = false;
+                else
+                    resultBook.Add($"{mySpd},{setList[iNum]}", new Vector3D(mySpd, setList[iNum],(mySpd-lastSpeed)/timeStep));
+                lastSpeed = mySpd;
+                return false;
+            }
+            return true;
+        }
         public void Add()
         {
             Vector3D _tempGPS;
@@ -122,6 +195,7 @@ namespace IngameScript
 
         public void Main(string argument, UpdateType updateSource)
         {
+            Echo($"{argument}");
             if (cL.TryParse(argument))
             {
                 Action commandAction;
@@ -140,7 +214,13 @@ namespace IngameScript
             }
 
             if ((updateSource & UpdateType.Once) == UpdateType.Once)
+            {
+                Echo("Running StateMachine");
                 RunStateMachine();
+            }
+
+            Echo("End of Main.");
+
         }
 
         public void GetBlocks()
@@ -212,9 +292,9 @@ namespace IngameScript
 
         public void Off()
         {
-            GyroCommand(new Vector3D(0, 0, 0), mySeat.WorldMatrix, true, false);
-            currAction = null;
-            Runtime.UpdateFrequency = UpdateFrequency.None;
+            DisableOverrides();
+            if (doProfile)
+                OutputData();
         }
 
         public void Aim()
@@ -236,12 +316,9 @@ namespace IngameScript
                 Next();
             else
             {
-                Runtime.UpdateFrequency |= UpdateFrequency.Once;
                 currAction = () => GyroAim(targetGPS, mySeat, new Vector3D(0, 0, 0), true, 0.01);
-                Runtime.UpdateFrequency |= UpdateFrequency.Once;
+                Start();
             }
-            
-            
         }
 
         public void Next()
@@ -253,8 +330,8 @@ namespace IngameScript
                 else
                     currGPS = 0;
                 targetGPS = targList[currGPS];
-                Runtime.UpdateFrequency |= UpdateFrequency.Once;
                 currAction = () => GyroAim(targetGPS, mySeat, new Vector3D(0, 0, 0), true, 0.01);
+                Start();
             }
             else
                 Echo("Need to add a GPS first!");
@@ -263,22 +340,22 @@ namespace IngameScript
         public void Flip()
         {
             targetGPS = mySeat.WorldMatrix.Backward;
-            Runtime.UpdateFrequency |= UpdateFrequency.Once;
             currAction = () => GyroAim(targetGPS, mySeat, new Vector3D(0, 0, 0), false, 0.01);
+            Start();
         }
 
         public void Retrograde()
         {
             targetGPS = -mySeat.GetShipVelocities().LinearVelocity;
-            Runtime.UpdateFrequency |= UpdateFrequency.Once;
             currAction = () => GyroAim(targetGPS, mySeat, new Vector3D(0, 0, 0), false, 0.01);
+            Start();
         }
 
         public void Prograde()
         {
             targetGPS = mySeat.GetShipVelocities().LinearVelocity;
-            Runtime.UpdateFrequency |= UpdateFrequency.Once;
             currAction = () => GyroAim(targetGPS, mySeat, new Vector3D(0, 0, 0), false, 0.01);
+            Start();
         }
 
         public void RunStateMachine()
@@ -286,9 +363,12 @@ namespace IngameScript
             bool hasMoreSteps = true;
             if (sM != null)
             {
+                Echo("We have a StateMachine.");
                 if (tickCount == tickStep)
                 {
+                    Echo("Running this tick.");
                     hasMoreSteps = sM.MoveNext();
+                    Echo($"Running Again: {hasMoreSteps}");
                     tickCount = 0;
                 }
 
@@ -298,26 +378,68 @@ namespace IngameScript
                 }
                 else
                 {
-                    sM.Dispose();
+                    Echo("Disposing the StateMachine.");
+                    sM?.Dispose();
                     sM = null;
                 }
                 tickCount++;
             }
         }
+
+        public void Idle()
+        {
+            DisableOverrides();
+        }
         IEnumerator<bool> RunStuffOverTime()
         {
             if (currAction == null)
             {
-                Off();
-                yield return true;
+                Idle();
+                Echo("Ran without anything to do.");
+                yield break;
             }
-                
             while (true)
             {
                 if (currAction())
-                    Runtime.UpdateFrequency = UpdateFrequency.None;
+                {
+                    if (doProfile)
+                    {
+                        if (iNum < setList.Count - 1)
+                        {
+                            iNum++;
+                            firstStep = true;
+                            Echo("Next Step in profiling gyros.");
+                        }
+                        else
+                        {
+                            Echo("Done profiling the gyros! Check CustomData.");
+                            OutputData();
+                            doProfile = false;
+                            firstStep = true;
+                            Runtime.UpdateFrequency = UpdateFrequency.None;
+                        }
+                    }
+                    else
+                    {
+                        Echo("Done with my task.");
+                        Idle();
+                        yield break;
+                    }
+                }
+                Echo("YIELD!");
                 yield return true;
             }
+        }
+
+        public void OutputData()
+        {
+            StringBuilder buildOutput = new StringBuilder();
+            foreach (string myKey in resultBook.Keys)
+            {
+                Echo($"Adding: {resultBook[myKey]}");
+                buildOutput.Append($"{resultBook[myKey].X},{resultBook[myKey].Y},{resultBook[myKey].Z}\n");
+            }
+            Me.CustomData = buildOutput.ToString();
         }
 
         bool TryParseGps(string gpsString, out Vector3D vector)
