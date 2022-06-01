@@ -22,6 +22,16 @@ namespace IngameScript
 {
     partial class Program : MyGridProgram
     {
+        //User Settable
+
+        // tickStep is how many ticks between actions. Control should be smooth for any tick count, smaller numbers means faster response and higher accelerations possible.
+        // For the sake of your server you're playing on, typically you would run between 5 and 10 ticks, but even 1 tick is more than reasonably performant for this script.
+        int tickStep = 10;
+
+
+
+
+        //Don't Touch below this line!
         List<IMyGyro> myGyros = new List<IMyGyro>();
         IMyShipController mySeat;
         Vector3D targetGPS;
@@ -35,7 +45,7 @@ namespace IngameScript
         GyroPTol xAxis = new GyroPTol();
         GyroPTol yAxis = new GyroPTol();
         GyroPTol zAxis = new GyroPTol();
-        int tickStep = 10;
+      
         double timeStep;
         int tickCount;
         List<double> setList = new List<double>();
@@ -65,6 +75,7 @@ namespace IngameScript
             _cmnds["Pro"] = Prograde;
             _cmnds["Flip"] = Flip;
             _cmnds["test"] = ProfileGyros;
+            _cmnds["cont"] = Continue;
 
             timeStep = (double)tickStep / 60.0;
             tickCount = tickStep; // Run the first time.
@@ -76,8 +87,16 @@ namespace IngameScript
             Runtime.UpdateFrequency |= UpdateFrequency.None;
         }
 
+        public void Continue()
+        {
+            if (sM != null)
+                Runtime.UpdateFrequency |= UpdateFrequency.Once;
+            else
+                Echo("No action in progress.");
+        }
         public void Start()
         {
+            Idle();
             sM?.Dispose();
             sM = null;
             sM = RunStuffOverTime();
@@ -85,7 +104,7 @@ namespace IngameScript
         }
         public void ProfileGyros()
         {
-            Echo("In ProfileGyros()");
+            //Echo("In ProfileGyros()");
             tickStep = 1;
             timeStep = (double)tickStep / 60.0;
             for(int i = 0; i < numInc; i++)
@@ -109,9 +128,9 @@ namespace IngameScript
 
         public bool profileDriver()
         {
-            Echo("In profileDriver()");
+            //Echo("In profileDriver()");
             double mySpd = Vector3D.TransformNormal(mySeat.GetShipVelocities().AngularVelocity, MatrixD.Transpose(mySeat.WorldMatrix)).X;
-            Echo($"{Math.Round(mySpd,2)},{Math.Round(setList[iNum],2)}");
+            //Echo($"{Math.Round(mySpd,2)},{Math.Round(setList[iNum],2)}");
             int dir;
             if (setList[iNum] == 0)
                 dir = 1;
@@ -195,7 +214,7 @@ namespace IngameScript
 
         public void Main(string argument, UpdateType updateSource)
         {
-            Echo($"{argument}");
+            //Echo($"{argument}");
             if (cL.TryParse(argument))
             {
                 Action commandAction;
@@ -215,11 +234,11 @@ namespace IngameScript
 
             if ((updateSource & UpdateType.Once) == UpdateType.Once)
             {
-                Echo("Running StateMachine");
+                //Echo("Running StateMachine");
                 RunStateMachine();
             }
 
-            Echo("End of Main.");
+            //Echo("End of Main.");
 
         }
 
@@ -267,7 +286,7 @@ namespace IngameScript
 
             GCV.X = xAxis.PIDRunSelfAdjusting(ang2trg.X, angS.X, timeStep, angTol * angTol);
             GCV.Y = yAxis.PIDRunSelfAdjusting(ang2trg.Y, angS.Y, timeStep, angTol * angTol);
-            Echo($"{Vector3D.Round(ang2trg, 2)}\n{Vector3D.Round(angS, 2)}\n{Vector3D.Round(GCV, 2)}\n{Math.Round(xAxis.gainPA, 2)},{Math.Round(yAxis.gainPA, 2)},{Math.Round(zAxis.gainPA, 2)}\n{Math.Round(xAxis.gainPD, 2)},{Math.Round(yAxis.gainPD, 2)},{Math.Round(zAxis.gainPD, 2)}");
+            //Echo($"{Vector3D.Round(ang2trg, 2)}\n{Vector3D.Round(angS, 2)}\n{Vector3D.Round(GCV, 2)}\n{Math.Round(xAxis.gainPA, 2)},{Math.Round(yAxis.gainPA, 2)},{Math.Round(zAxis.gainPA, 2)}\n{Math.Round(xAxis.gainPD, 2)},{Math.Round(yAxis.gainPD, 2)},{Math.Round(zAxis.gainPD, 2)}");
             GyroCommand(GCV, _mySeat.WorldMatrix);
             Echo($"AngleToTarget: {Vector3D.Round(ang2trg, 2)}");
             return ang2trg.Length() <= angTol;
@@ -363,12 +382,12 @@ namespace IngameScript
             bool hasMoreSteps = true;
             if (sM != null)
             {
-                Echo("We have a StateMachine.");
+                //Echo("We have a StateMachine.");
                 if (tickCount == tickStep)
                 {
-                    Echo("Running this tick.");
+                    //Echo("Running this tick.");
                     hasMoreSteps = sM.MoveNext();
-                    Echo($"Running Again: {hasMoreSteps}");
+                    //Echo($"Running Again: {hasMoreSteps}");
                     tickCount = 0;
                 }
 
@@ -426,7 +445,7 @@ namespace IngameScript
                         yield break;
                     }
                 }
-                Echo("YIELD!");
+                //Echo("YIELD!");
                 yield return true;
             }
         }

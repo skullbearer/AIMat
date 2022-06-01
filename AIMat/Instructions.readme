@@ -1,5 +1,51 @@
-﻿R e a d m e
+﻿SOME FEW PEOPLE WILL ACTUALLY README
+-----------
+Script written by Skullbearer
+Methods and classes borrowed from Whiplash141 are at the bottom of the script and should be all (or mostly) labeled as such.
+
+GyroPTol is a custom class P+FF gain controller written by Skullbearer.
+
+https://github.com/skullbearer
+
+Malware's MDK-SE and VS2019 was used to create this script.
+
+HOW TO USE THIS
 -----------
 
-In this file you can include any instructions or other comments you want to have injected onto the 
-top of your final script. You can safely delete this file if you do not want any such comments.
+Either in your cockpit hotbar or just via the control screen, use 'Run with Argument' or type in an Argument then click Run.
+
+Commands are not case sensitive, but they do need to be the exact spelling.
+
+On Recompile the script will grab whatever control seat a player is occupying (Cockpit, Flight Seat, RC block you're controlling).
+If you aren't in control of a control block, then it will grab a random block. If you have any control blocks facing some direction
+other than 'forward' for your grid, chances are it will grab one of those so... either face all control blocks forward or be in
+control of the one you want and recompile.
+
+NOTE FOR NEXUS SERVERS AND SERVER RESTARTS
+!! Restarts, Hangar loads, paste, crossing Nexus instances; All result in a Recompile. !!
+
+Commands:
+Flip - Flips your grid completly over to face the other way. Based on whatever control block the script is using.
+Ret  - Rotates the grid to face away from the direction it's moving, ie it Retrogrades your grid.
+Pro  - Rotates the grid to face the direction it's moving, ie it Progrades your grid.
+Add  - In the format "Add GPS:" where the GPS: is a copy-pasted GPS from the GPS tab. You can add as many as you want.
+Aim  - This will aim at the current GPS. If you haven't run Next or have only 1 GPS, this will be the 1st GPS.
+Next - This will aim at the next GPS in the list of GPS you've loaded. If you reach the end of the list it goes back to the 1st.
+Off  - Turns off the grid. If you were performing a gyro profile test then it will put the partial data into the PB CustomData.
+Test - Runs a single axis acceleration profile test of your grid gyros. By default goes through 10 different testing speeds. 
+	 - Puts the raw data into the PB Custom Data in the form of Speed (rad/s) , Command (rad/s) , Acceleration (rad/s/s)
+	 - Not useful to you, I was using it for testing.
+
+FINAL NOTES ABOUT THE BEHAVIOR
+AIMat uses a self-tuning Feed-Forward plus model prediction error P controller (aka P+FF). The first turn may be slow if you have
+a fast turning grid. The second, third... they may ALSO be slow if your grid is exceptionally fast. It will get faster every turn.
+After enough executions of a command it will tune for the axis(es) involved and make a FAST turn. Is it the absolute fastest possible?
+I dunno. Maybe. It's designed to eventually home in on maximum performance, at least for a gyro override.
+
+Tested at tickStep 1 through 10 (bigger is slower on this value)
+
+No, it doesn't display to your LCD. No, it doesn't have things to set in CustomData. This is a bare-bones ship pointer/flipper.
+
+As always, if you're struggling to fly your grid, take the advice of Sigma Draconis Games and Git Gud. With love.
+
+- Skullbearer
