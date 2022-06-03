@@ -26,7 +26,13 @@ namespace IngameScript
 
         // tickStep is how many ticks between actions. Control should be smooth for any tick count, smaller numbers means faster response and higher accelerations possible.
         // For the sake of your server you're playing on, typically you would run between 5 and 10 ticks, but even 1 tick is more than reasonably performant for this script.
-        int tickStep = 10;
+        int ticksBetweenAction = 10;
+        
+
+        // If you add this tag to the name of a control block, that is, Remote Control, Flight Seat, Cockpit, etc, it will use that for orientation.
+        string controlFlag = "[AIM]";
+        string defaultForward = "Forward";
+
 
 
 
@@ -47,6 +53,7 @@ namespace IngameScript
         GyroPTol zAxis = new GyroPTol();
       
         double timeStep;
+        int tickStep;
         int tickCount;
         List<double> setList = new List<double>();
         int numInc = 10;
@@ -60,6 +67,18 @@ namespace IngameScript
 
         Func<bool> currAction;
         bool doProfile = false;
+
+        enum fwdDir
+        {
+            Forward,
+            Down,
+            Backward,
+            Up,
+            Left,
+            Right
+        }
+
+        fwdDir myFwd;
 
         public Program()
         {
@@ -76,9 +95,14 @@ namespace IngameScript
             _cmnds["Flip"] = Flip;
             _cmnds["test"] = ProfileGyros;
             _cmnds["cont"] = Continue;
+            _cmnds["reset"] = Reset;
+            _cmnds["pause"] = Idle;
 
+            myFwd = fwdDir.Forward;
+            tickStep = ticksBetweenAction;
             timeStep = (double)tickStep / 60.0;
             tickCount = tickStep; // Run the first time.
+            defaultForward = defaultForward.ToLower();
 
             doProfile = false;
             resultBook.Clear();
@@ -87,6 +111,15 @@ namespace IngameScript
             Runtime.UpdateFrequency |= UpdateFrequency.None;
         }
 
+        public void Reset()
+        {
+            tickStep = ticksBetweenAction;
+            timeStep = (double)tickStep / 60.0;
+            tickCount = tickStep;
+            resultBook.Clear();
+            setList.Clear();
+            DisableOverrides();
+        }
         public void Continue()
         {
             if (sM != null)
@@ -107,6 +140,7 @@ namespace IngameScript
             //Echo("In ProfileGyros()");
             tickStep = 1;
             timeStep = (double)tickStep / 60.0;
+            tickCount = tickStep;
             for(int i = 0; i < numInc; i++)
             {
                 setList.Add(Math.PI - (double)i * (Math.PI / numInc));
@@ -221,6 +255,22 @@ namespace IngameScript
 
                 string command = cL.Argument(0);
 
+                if (cL.Switches.Count > 0)
+                {
+                    if (cL.Switch("Forward"))
+                        myFwd = fwdDir.Forward;
+                    else if (cL.Switch("Down"))
+                        myFwd = fwdDir.Down;
+                    else if (cL.Switch("Backward"))
+                        myFwd = fwdDir.Backward;
+                    else if (cL.Switch("Up"))
+                        myFwd = fwdDir.Up;
+                    else if (cL.Switch("Left"))
+                        myFwd = fwdDir.Left;
+                    else if (cL.Switch("Right"))
+                        myFwd = fwdDir.Right;
+                }
+
                 if (command == null)
                     Echo("No command specified.");
                 else if (_cmnds.TryGetValue(command, out commandAction))
@@ -254,8 +304,12 @@ namespace IngameScript
                 if (_seatList[i].IsUnderControl && _seatList[i].IsSameConstructAs(Me))
                 {
                     mySeat = _seatList[i];
+                }
+                if (_seatList[i].CustomName.Contains(controlFlag) && _seatList[i].IsSameConstructAs(Me))
+                {
+                    mySeat = _seatList[i];
                     break;
-                }   
+                }
             }
             if (mySeat == null)
             { // If they aren't sitting in a seat when recompiled, just grab whatever controller.
@@ -270,26 +324,36 @@ namespace IngameScript
             }
         }
 
-        public bool GyroAim(Vector3D targVec, IMyShipController _mySeat, Vector3D refUp, bool isGPS = false, double angTol = 0.1)
+        public bool GyroAim(Vector3D targVec, IMyShipController _mySeat, MatrixD refRot, bool isGPS = false, double angTol = 0.1)
         {
             Vector3D AimVec;
             if (isGPS)
                 AimVec = targVec - _mySeat.GetPosition();
             else
                 AimVec = targVec;
+            MatrixD _useMatrix = pickForward(_mySeat);
+
             Vector3D angS = mySeat.GetShipVelocities().AngularVelocity;
             angS = Vector3D.TransformNormal(angS, MatrixD.Transpose(_mySeat.WorldMatrix));
             Vector3D GCV = new Vector3D(0, 0, 0);
             Vector3D ang2trg = new Vector3D();
+            Vector3D ang2fwd = Vector3D.Zero;
 
-            GetRotationAnglesSimultaneous(AimVec, refUp, _mySeat.WorldMatrix, out ang2trg.X, out ang2trg.Y, out ang2trg.Z);
+            GetRotationAnglesSimultaneous(AimVec, new Vector3D(0,0,0), _useMatrix, out ang2trg.X, out ang2trg.Y, out ang2trg.Z);
+
+            ang2trg += ang2fwd;
 
             GCV.X = xAxis.PIDRunSelfAdjusting(ang2trg.X, angS.X, timeStep, angTol * angTol);
             GCV.Y = yAxis.PIDRunSelfAdjusting(ang2trg.Y, angS.Y, timeStep, angTol * angTol);
             //Echo($"{Vector3D.Round(ang2trg, 2)}\n{Vector3D.Round(angS, 2)}\n{Vector3D.Round(GCV, 2)}\n{Math.Round(xAxis.gainPA, 2)},{Math.Round(yAxis.gainPA, 2)},{Math.Round(zAxis.gainPA, 2)}\n{Math.Round(xAxis.gainPD, 2)},{Math.Round(yAxis.gainPD, 2)},{Math.Round(zAxis.gainPD, 2)}");
-            GyroCommand(GCV, _mySeat.WorldMatrix);
+            GyroCommand(GCV, _useMatrix);
             Echo($"AngleToTarget: {Vector3D.Round(ang2trg, 2)}");
-            return ang2trg.Length() <= angTol;
+
+            // Allows the user to toggle perpetual aiming
+            if (angTol <= 0.001)
+                return false;
+            else
+                return ang2trg.Length() <= angTol;
         }
 
         public void GyroCommand(Vector3D RA, MatrixD refMtrx, bool isWorldAxis = false, bool onOff = true)
@@ -314,28 +378,74 @@ namespace IngameScript
             DisableOverrides();
             if (doProfile)
                 OutputData();
+            sM?.Dispose();
+            sM = null;
+        }
+
+        public void TestSwitches()
+        {
+            foreach (string s in cL.Switches)
+            {
+                Echo(s);
+            }
+        }
+        public MatrixD pickForward(IMyShipController b)
+        {
+            Vector3D _useFwd = b.WorldMatrix.Forward;
+            Vector3D _useUp = b.WorldMatrix.Up;
+            if (myFwd == fwdDir.Forward)
+            {
+                _useFwd = b.WorldMatrix.Forward;
+                _useUp = b.WorldMatrix.Up;
+            }
+            else if (myFwd == fwdDir.Down)
+            {
+                _useFwd = b.WorldMatrix.Down;
+                _useUp = b.WorldMatrix.Forward;
+            }
+            else if (myFwd == fwdDir.Backward)
+            {
+                _useFwd = b.WorldMatrix.Backward;
+                _useUp = b.WorldMatrix.Down;
+            }
+            else if (myFwd == fwdDir.Up)
+            {
+                _useFwd = b.WorldMatrix.Up;
+                _useUp = b.WorldMatrix.Backward;
+            }
+            else if (myFwd == fwdDir.Left)
+            {
+                _useFwd = b.WorldMatrix.Left;
+                _useUp = b.WorldMatrix.Up;
+            }
+            else if (myFwd == fwdDir.Right)
+            {
+                _useFwd = b.WorldMatrix.Right;
+                _useUp = b.WorldMatrix.Up;
+            }
+
+            MatrixD _newMatrix = MatrixD.Zero;
+            _newMatrix.Forward = _useFwd;
+            _newMatrix.Up = _useUp;
+            _newMatrix.Left = Vector3D.Cross(_newMatrix.Up, _newMatrix.Forward);
+            return _newMatrix;
         }
 
         public void Aim()
         {
-            StringBuilder unParse = new StringBuilder();
+            double _angTol = 0.01;
+            if (cL.Switch("continuous"))
+                _angTol = 0.0;
+
             if (cL.ArgumentCount > 1 && cL.Argument(1).StartsWith("gps"))
             {
-                if (cL.ArgumentCount > 2)
-                {
-                    for (int i = 1; i < cL.ArgumentCount - 1; i++)
-                    {
-                        unParse.Append(cL.Argument(i));
-                    }
-                    if (!TryParseGps(unParse.ToString(), out targetGPS))
-                        Echo("No GPS found!");
-                }
+                Add();
             }
-            if (targetGPS == null)
+            if (targList.Count < 1)
                 Next();
             else
             {
-                currAction = () => GyroAim(targetGPS, mySeat, new Vector3D(0, 0, 0), true, 0.01);
+                currAction = () => GyroAim(targetGPS, mySeat, pickForward(mySeat), true, _angTol);
                 Start();
             }
         }
@@ -349,8 +459,7 @@ namespace IngameScript
                 else
                     currGPS = 0;
                 targetGPS = targList[currGPS];
-                currAction = () => GyroAim(targetGPS, mySeat, new Vector3D(0, 0, 0), true, 0.01);
-                Start();
+                Aim();
             }
             else
                 Echo("Need to add a GPS first!");
@@ -358,22 +467,31 @@ namespace IngameScript
 
         public void Flip()
         {
-            targetGPS = mySeat.WorldMatrix.Backward;
-            currAction = () => GyroAim(targetGPS, mySeat, new Vector3D(0, 0, 0), false, 0.01);
+            double _angTol = 0.01;
+            if (cL.Switch("continuous"))
+                _angTol = 0.0;
+            Vector3D _aimVec = mySeat.WorldMatrix.Backward;
+            currAction = () => GyroAim(_aimVec, mySeat, pickForward(mySeat), false, _angTol) ;
             Start();
         }
 
         public void Retrograde()
         {
-            targetGPS = -mySeat.GetShipVelocities().LinearVelocity;
-            currAction = () => GyroAim(targetGPS, mySeat, new Vector3D(0, 0, 0), false, 0.01);
+            double _angTol = 0.01;
+            if (cL.Switch("continuous"))
+                _angTol = 0.0;
+            Vector3D _aimVec = -mySeat.GetShipVelocities().LinearVelocity;
+            currAction = () => GyroAim(_aimVec, mySeat, pickForward(mySeat), false, _angTol);
             Start();
         }
 
         public void Prograde()
         {
-            targetGPS = mySeat.GetShipVelocities().LinearVelocity;
-            currAction = () => GyroAim(targetGPS, mySeat, new Vector3D(0, 0, 0), false, 0.01);
+            double _angTol = 0.01;
+            if (cL.Switch("continuous"))
+                _angTol = 0.0;
+            Vector3D _aimVec = mySeat.GetShipVelocities().LinearVelocity;
+            currAction = () => GyroAim(_aimVec, mySeat, pickForward(mySeat), false, _angTol);
             Start();
         }
 
@@ -459,6 +577,7 @@ namespace IngameScript
                 buildOutput.Append($"{resultBook[myKey].X},{resultBook[myKey].Y},{resultBook[myKey].Z}\n");
             }
             Me.CustomData = buildOutput.ToString();
+            Reset();
         }
 
         bool TryParseGps(string gpsString, out Vector3D vector)
